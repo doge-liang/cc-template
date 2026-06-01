@@ -10,6 +10,7 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
+const cp = require('child_process');
 
 let raw = '';
 process.stdin.setEncoding('utf8');
@@ -99,12 +100,52 @@ function gitBranch(cwd) {
   return null;
 }
 
+// 通过一次 `git status --porcelain -b` 拿到分支 + 工作区状态计数。
+// 返回 {branch, staged, modified, untracked, ahead, behind}，非 git 仓库返回 null。
+function gitInfo(cwd) {
+  let out;
+  try {
+    out = cp.execSync('git status --porcelain=v1 -b', {
+      cwd,
+      timeout: 800,
+      stdio: ['ignore', 'pipe', 'ignore'],
+      encoding: 'utf8',
+      windowsHide: true,
+    });
+  } catch (_) {
+    // git 不可用或非仓库：退回只读 .git/HEAD 拿分支名（无法给出 dirty 计数）
+    const b = gitBranch(cwd);
+    return b ? { branch: b, staged: 0, modified: 0, untracked: 0, ahead: 0, behind: 0 } : null;
+  }
+  let branch = null, ahead = 0, behind = 0, staged = 0, modified = 0, untracked = 0;
+  for (const line of out.split('\n')) {
+    if (line.startsWith('## ')) {
+      const head = line.slice(3);
+      if (head.startsWith('HEAD (no branch)')) {
+        branch = gitBranch(cwd) || 'detached'; // detached HEAD：显示短 hash
+      } else {
+        branch = head.split('...')[0].split(' ')[0];
+        const am = head.match(/ahead (\d+)/); if (am) ahead = +am[1];
+        const bm = head.match(/behind (\d+)/); if (bm) behind = +bm[1];
+      }
+    } else if (line.length >= 2) {
+      const x = line[0], y = line[1];
+      if (x === '?' && y === '?') untracked++;
+      else {
+        if (x !== ' ' && x !== '?') staged++;   // 已暂存
+        if (y !== ' ' && y !== '?') modified++;  // 工作区已修改（未暂存）
+      }
+    }
+  }
+  return branch ? { branch, staged, modified, untracked, ahead, behind } : null;
+}
+
 // ---------- 主渲染 ----------
 function render(d) {
   const model = (d.model && d.model.display_name) || 'Claude';
   const cwd = (d.workspace && d.workspace.current_dir) || d.cwd || process.cwd();
   const dirName = path.basename(cwd) || cwd;
-  const branch = gitBranch(cwd);
+  const git = gitInfo(cwd);
 
   const cw = d.context_window || {};
   const ctxPct =
@@ -118,7 +159,20 @@ function render(d) {
   // ----- 第 1 行：模型 · 目录 · git -----
   const sep = gray(' · ');
   let line1 = bold(cyan('◆ ' + model)) + sep + blue('📁 ' + dirName);
-  if (branch) line1 += sep + A('35', '⎇ ' + branch);
+  if (git) {
+    let g = A('35', '⎇ ' + git.branch);
+    const marks = [];
+    if (git.staged) marks.push(A('32', '+' + git.staged));    // 已暂存：绿
+    if (git.modified) marks.push(A('33', '~' + git.modified)); // 已修改：黄
+    if (git.untracked) marks.push(A('90', '?' + git.untracked)); // 未跟踪：灰
+    if (marks.length) g += A('33', '*') + ' ' + marks.join(' '); // dirty 标记
+    else g += A('32', ' ✓'); // 干净
+    let ab = '';
+    if (git.ahead) ab += '↑' + git.ahead;
+    if (git.behind) ab += '↓' + git.behind;
+    if (ab) g += ' ' + cyan(ab);
+    line1 += sep + g;
+  }
 
   // ----- 第 2 行：Context 上下文占用 -----
   let line2 = gray('🧠 Ctx ') + bar(ctxPct) + gray(`  ${fmtTokens(used)}/${fmtTokens(size)}`);
