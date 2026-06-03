@@ -153,3 +153,14 @@ test('safetyScan: 数组里的裸高熵串也命中', () => {
   assert.strictEqual(found.length, 1);
   assert.strictEqual(found[0].path, 'creds[0]');
 });
+
+test('scanText: JSON 形式 "KEY": "VALUE" 也命中', () => {
+  const txt = '  "API_KEY": "Ab3kZ9qP2wL7nR4tX1mD8vC0",\n  "name": "hello"\n';
+  const found = scanText(txt, []);
+  assert.strictEqual(found.length, 1);
+});
+
+test('safetyScan: 密钥名但值为 null/数字 不误报', () => {
+  const found = safetyScan({ env: { SOME_TOKEN: null, COUNT: 12345 } }, []);
+  assert.strictEqual(found.length, 0);
+});
