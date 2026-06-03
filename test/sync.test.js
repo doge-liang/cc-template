@@ -7,6 +7,7 @@ const { expandPath } = require('../lib/paths');
 const fs = require('fs');
 const { readIfExists, atomicWrite, copyDir } = require('../lib/fsutil');
 const { mergeForApply, diffJson, getByPath, setByPath, hasPath } = require('../lib/jsonmerge');
+const { redactForCapture, safetyScan, scanText } = require('../lib/secrets');
 
 function tmpdir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'cct-'));
@@ -111,4 +112,38 @@ test('hasPath/getByPath: 数组路径行为一致', () => {
   const o = { a: [{ k: 'v' }] };
   assert.strictEqual(hasPath(o, 'a.0.k'), true);
   assert.strictEqual(getByPath(o, 'a.0.k'), 'v');
+});
+
+test('redactForCapture: 声明的密钥真值→占位', () => {
+  const local = { env: { ZOTERO_API_KEY: 'REAL', other: 'keep' } };
+  const secrets = [{ path: 'env.ZOTERO_API_KEY', placeholder: '<占位>' }];
+  const out = redactForCapture(local, secrets);
+  assert.strictEqual(out.env.ZOTERO_API_KEY, '<占位>');
+  assert.strictEqual(out.env.other, 'keep');
+  assert.strictEqual(local.env.ZOTERO_API_KEY, 'REAL');
+});
+
+test('safetyScan: 拦下未声明的疑似密钥（key 名命中）', () => {
+  const obj = { env: { SOME_TOKEN: 'abc123xyz' } };
+  const found = safetyScan(obj, ['<占位>']);
+  assert.strictEqual(found.length, 1);
+  assert.strictEqual(found[0].path, 'env.SOME_TOKEN');
+});
+
+test('safetyScan: 已声明占位 / 已知占位不报', () => {
+  const obj = { env: { ZOTERO_API_KEY: '<占位>', NORMAL: 'hello' } };
+  const found = safetyScan(obj, ['<占位>']);
+  assert.strictEqual(found.length, 0);
+});
+
+test('safetyScan: 高熵长串值即使 key 名普通也命中', () => {
+  const obj = { foo: 'Ab3kZ9qP2wL7nR4tX1mD8vC0' };
+  const found = safetyScan(obj, []);
+  assert.strictEqual(found.length, 1);
+});
+
+test('scanText: 裸文件中的密钥赋值', () => {
+  const txt = 'API_KEY=Ab3kZ9qP2wL7nR4tX1mD8vC0\nname=hello\n';
+  const found = scanText(txt, []);
+  assert.strictEqual(found.length, 1);
 });
