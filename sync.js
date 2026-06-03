@@ -50,6 +50,13 @@ function repoPath(it) { return path.join(REPO, it.repo); }
 function targetPath(it) { return expandPath(it.target); }
 function secretPaths(it) { return (it.secrets || []).map((s) => s.path); }
 
+function readJson(p) {
+  const raw = readIfExists(p);
+  if (raw == null) return {};
+  try { return JSON.parse(raw); }
+  catch (e) { throw new Error('JSON 解析失败 ' + p + ': ' + e.message); }
+}
+
 function cmdList(manifest) {
   for (const it of manifest.items) {
     const st = itemStatus(repoPath(it), targetPath(it));
@@ -61,8 +68,8 @@ function cmdDiff(items) {
   for (const it of items) {
     console.log('\n=== ' + it.id + ' (' + it.type + ') ===');
     if (it.type === 'json-merge') {
-      const tpl = JSON.parse(readIfExists(repoPath(it)) || '{}');
-      const local = JSON.parse(readIfExists(targetPath(it)) || '{}');
+      const tpl = readJson(repoPath(it));
+      const local = readJson(targetPath(it));
       const { merged } = mergeForApply(tpl, local, it.secrets);
       console.log(renderJsonDiff(diffJson(local, merged, secretPaths(it))));
     } else {
@@ -77,8 +84,8 @@ async function cmdApply(items, flags) {
     const rp = repoPath(it), tp = targetPath(it);
     if (!fs.existsSync(rp)) { console.error('repo 缺少 ' + it.repo + '，跳过'); continue; }
     if (it.type === 'json-merge') {
-      const tpl = JSON.parse(readIfExists(rp) || '{}');
-      const local = JSON.parse(readIfExists(tp) || '{}');
+      const tpl = readJson(rp);
+      const local = readJson(tp);
       const { merged, reminders } = mergeForApply(tpl, local, it.secrets);
       const rows = diffJson(local, merged, secretPaths(it));
       console.log(renderJsonDiff(rows));
@@ -106,7 +113,7 @@ async function cmdCapture(items, flags) {
     const rp = repoPath(it), tp = targetPath(it);
     if (!fs.existsSync(tp)) { console.error('本地缺少 ' + tp + '，跳过'); continue; }
     if (it.type === 'json-merge') {
-      const local = JSON.parse(readIfExists(tp) || '{}');
+      const local = readJson(tp);
       const redacted = redactForCapture(local, it.secrets);
       const known = (it.secrets || []).map((s) => s.placeholder);
       const leaks = safetyScan(redacted, known);
@@ -117,7 +124,7 @@ async function cmdCapture(items, flags) {
         process.exitCode = 3;
         continue;
       }
-      const repoObj = JSON.parse(readIfExists(rp) || '{}');
+      const repoObj = readJson(rp);
       const rows = diffJson(repoObj, redacted, []);
       console.log(renderJsonDiff(rows));
       if (flags.dryRun) continue;
@@ -136,7 +143,7 @@ async function cmdCapture(items, flags) {
 }
 
 function usage() {
-  console.log('用法: node sync.js <list|diff|apply|capture> [id...] [--yes] [--dry-run]');
+  console.log('用法: node sync.js <list|diff|apply|capture> [id...] [--yes] [--dry-run] [--force-allow-unredacted]');
 }
 
 async function main() {
@@ -155,4 +162,4 @@ async function main() {
   process.exit(2);
 }
 
-main();
+main().catch((e) => { console.error(e.message); process.exit(1); });
