@@ -16,6 +16,26 @@
 
 ---
 
+## 🔄 配置同步（多设备）
+
+用 `sync.js`（纯 Node、零依赖）在多设备间分发本仓配置。以 `manifest.json` 为注册表，密钥走**模板占位**——真密钥永不进仓。
+
+```bash
+node sync.js list                 # 看有哪些项、各自同步状态
+node sync.js diff [id...]          # 只看差异，不改文件
+node sync.js apply [id...]         # repo → 本地（带 diff 确认；保留本地真密钥）
+node sync.js capture [id...]       # 本地 → repo（自动把真密钥剥离成占位；写前安全扫描）
+```
+
+**新机部署：** `git clone` → `node sync.js apply` → 按提示填入各密钥（脚本会列出去哪取）。
+**回灌改动：** 改完本地配置 → `node sync.js capture` → `git commit`。
+
+> `capture` 写回前会扫描"未声明的疑似密钥"，命中即中止，避免真值漏进公开仓。
+
+> **Windows 注意**：`settings.template.json` 里 `statusLine.command` 用了 `~`，Windows 的 cmd 不展开 `~`。在 Windows 上 `apply settings` 后，请把该命令改成绝对路径，例如 `node "C:\\Users\\<你>\\.claude\\statusline.js"`。
+
+---
+
 ## ⭐ 当前组件
 
 ### 1. Context Usage Bar —— 上下文占用 + 套餐用量进度条

@@ -39,6 +39,21 @@ Claude Code 状态栏小组件：在底部显示**上下文窗口占用**和**�
 
 - [Node.js](https://nodejs.org)（任何较新版本均可）。验证：`node --version`。
 
+## 数据来源 / 运行依赖
+
+Claude Code 每次刷新状态栏时，把当前会话 JSON 经 **stdin** 传给本脚本。各显示项的来源：
+
+| 显示项 | 来源字段 | 由谁提供 |
+|--------|----------|----------|
+| 模型名 | `model.display_name` | 当前会话选定模型 |
+| 目录 | `workspace.current_dir` / `cwd` | 会话工作区 |
+| 上下文占用 | `context_window.used_percentage` / `total_input_tokens` / `context_window_size` | Claude Code 的 token 计量（来自 API usage） |
+| 本次花费 | `cost.total_cost_usd` | 会话成本（API token × 定价） |
+| 套餐 5h/7d | `rate_limits.five_hour` / `seven_day` 的 `used_percentage` + `resets_at` | **仅 Claude.ai Pro/Max 订阅**，来自 API 限流响应头，**首次 API 响应后**才有；API-key/Console 计费用户无此字段 |
+| git 分支/dirty | —— 不来自 Claude Code | 脚本自跑 `git status` / 读 `.git/HEAD` |
+
+**安装条件：** ① Node.js 在 PATH；② `settings.json` 已注册 `statusLine`；③ 数据依赖 Claude Code 的 statusLine stdin 契约（见[官方文档](https://code.claude.com/docs/en/statusline)）；④ 第 3 行仅在订阅账户、且本次会话已有过 API 响应后出现。
+
 ## 安装
 
 1. 把 `statusline.js` 放到一个固定位置，推荐：
