@@ -6,7 +6,7 @@ const path = require('path');
 const { expandPath } = require('../lib/paths');
 const fs = require('fs');
 const { readIfExists, atomicWrite, copyDir } = require('../lib/fsutil');
-const { mergeForApply, diffJson, getByPath } = require('../lib/jsonmerge');
+const { mergeForApply, diffJson, getByPath, setByPath, hasPath } = require('../lib/jsonmerge');
 
 function tmpdir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'cct-'));
@@ -92,4 +92,23 @@ test('diffJson: 分类 added/changed/local-only/secret', () => {
   assert.strictEqual(byPath['added'], 'added');
   assert.strictEqual(byPath['env.K'], 'secret');
   assert.ok(!('keep' in byPath));
+});
+
+test('mergeForApply: local 仍为占位时触发 reminder', () => {
+  const template = { env: { KEY: '<placeholder>' } };
+  const local    = { env: { KEY: '<placeholder>' } };
+  const secrets  = [{ path: 'env.KEY', placeholder: '<placeholder>' }];
+  const { merged, reminders } = mergeForApply(template, local, secrets);
+  assert.strictEqual(getByPath(merged, 'env.KEY'), '<placeholder>');
+  assert.strictEqual(reminders.length, 1);
+});
+
+test('setByPath: 撞到标量中间节点时抛错', () => {
+  assert.throws(() => setByPath({ a: 'scalar' }, 'a.b', 1), /不是对象/);
+});
+
+test('hasPath/getByPath: 数组路径行为一致', () => {
+  const o = { a: [{ k: 'v' }] };
+  assert.strictEqual(hasPath(o, 'a.0.k'), true);
+  assert.strictEqual(getByPath(o, 'a.0.k'), 'v');
 });
