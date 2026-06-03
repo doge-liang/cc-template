@@ -27,18 +27,23 @@ process.stdin.on('end', () => {
 });
 
 // ---------- ANSI 颜色辅助 ----------
+// 配色目标：黑色终端高对比。内容文字一律用亮色系(9x/亮白97)，
+// 只有"分隔点"和"进度条空槽"用深灰(90)当背景轨道，让亮的填充段更跳。
 const A = (code, s) => `\x1b[${code}m${s}\x1b[0m`;
-const dim = (s) => A('2', s);
 const bold = (s) => A('1', s);
-const cyan = (s) => A('36', s);
-const blue = (s) => A('34', s);
-const gray = (s) => A('90', s);
+const bcyan = (s) => A('96', s);      // 模型
+const bblue = (s) => A('94', s);      // 目录
+const bmagenta = (s) => A('95', s);   // git 分支
+const bgreen = (s) => A('92', s);     // 花费 / staged / 干净
+const bwhite = (s) => A('97', s);     // 主文字：标签、token 数
+const muted = (s) => A('37', s);      // 次级文字：?未跟踪、↺重置倒计时
+const track = (s) => A('90', s);      // 分隔点 / 进度条空槽(深灰轨道)
 
-// 根据占用百分比给进度条上色：绿 < 50，黄 < 80，红 >= 80
+// 根据占用百分比给进度条上色：亮绿 < 50，亮黄 < 80，亮红 >= 80
 function pctColor(pct) {
-  if (pct >= 80) return '31'; // red
-  if (pct >= 50) return '33'; // yellow
-  return '32';                // green
+  if (pct >= 80) return '91'; // bright red
+  if (pct >= 50) return '93'; // bright yellow
+  return '92';                // bright green
 }
 
 // 渲染一个进度条： [█████░░░░░] 42%
@@ -49,9 +54,9 @@ function bar(pct, width = 10) {
   const filled = Math.round((width * p) / 100);
   const empty = width - filled;
   const code = pctColor(p);
-  const body = A(code, '█'.repeat(filled)) + dim('░'.repeat(empty));
+  const body = A(code, '█'.repeat(filled)) + track('░'.repeat(empty));
   const label = A(code, String(Math.round(p)).padStart(2, ' ') + '%');
-  return `${dim('[')}${body}${dim(']')} ${label}`;
+  return `${track('[')}${body}${track(']')} ${label}`;
 }
 
 // 把 token 数格式化为 84k / 1.2M
@@ -144,7 +149,7 @@ function gitInfo(cwd) {
 function render(d) {
   const model = (d.model && d.model.display_name) || 'Claude';
   const cwd = (d.workspace && d.workspace.current_dir) || d.cwd || process.cwd();
-  const dirName = path.basename(cwd) || cwd;
+  const dirName = cwd; // 显示完整工作目录路径
   const git = gitInfo(cwd);
 
   const cw = d.context_window || {};
@@ -156,27 +161,28 @@ function render(d) {
 
   const cost = d.cost && d.cost.total_cost_usd;
 
+  // 统一 emoji 图标族(🤖 📁 🌿 🧠 💰 📊 ⏳)；emoji 放在颜色包裹之外，文字才上亮色。
   // ----- 第 1 行：模型 · 目录 · git -----
-  const sep = gray(' · ');
-  let line1 = bold(cyan('◆ ' + model)) + sep + blue('📁 ' + dirName);
+  const sep = track('  ·  ');
+  let line1 = '🤖 ' + bold(bcyan(model)) + sep + '📁 ' + bblue(dirName);
   if (git) {
-    let g = A('35', '⎇ ' + git.branch);
+    let g = '🌿 ' + bmagenta(git.branch);
     const marks = [];
-    if (git.staged) marks.push(A('32', '+' + git.staged));    // 已暂存：绿
-    if (git.modified) marks.push(A('33', '~' + git.modified)); // 已修改：黄
-    if (git.untracked) marks.push(A('90', '?' + git.untracked)); // 未跟踪：灰
-    if (marks.length) g += A('33', '*') + ' ' + marks.join(' '); // dirty 标记
-    else g += A('32', ' ✓'); // 干净
+    if (git.staged) marks.push(bgreen('+' + git.staged));         // 已暂存：亮绿
+    if (git.modified) marks.push(A('93', '~' + git.modified));    // 已修改：亮黄
+    if (git.untracked) marks.push(muted('?' + git.untracked));    // 未跟踪：白
+    if (marks.length) g += A('93', '*') + ' ' + marks.join(' ');  // dirty 标记
+    else g += bgreen(' ✓'); // 干净
     let ab = '';
     if (git.ahead) ab += '↑' + git.ahead;
     if (git.behind) ab += '↓' + git.behind;
-    if (ab) g += ' ' + cyan(ab);
+    if (ab) g += ' ' + bcyan(ab);
     line1 += sep + g;
   }
 
   // ----- 第 2 行：Context 上下文占用 -----
-  let line2 = gray('🧠 Ctx ') + bar(ctxPct) + gray(`  ${fmtTokens(used)}/${fmtTokens(size)}`);
-  if (typeof cost === 'number') line2 += gray('   💰 $' + cost.toFixed(2));
+  let line2 = '🧠 ' + bold(bwhite('Context: ')) + bar(ctxPct) + bwhite(`  ${fmtTokens(used)}/${fmtTokens(size)}`);
+  if (typeof cost === 'number') line2 += sep + '💰 ' + bgreen('$' + cost.toFixed(2));
 
   const lines = [line1, line2];
 
@@ -186,12 +192,12 @@ function render(d) {
     const now = Date.now() / 1000;
     const seg = (label, w) => {
       if (!w || w.used_percentage == null) return null;
-      let s = gray(label + ' ') + bar(w.used_percentage, 8);
-      if (w.resets_at) s += gray(' ↺' + fmtRemain(w.resets_at - now));
+      let s = bwhite(label + ' ') + bar(w.used_percentage, 8);
+      if (w.resets_at) s += ' ⏳ ' + muted(fmtRemain(w.resets_at - now));
       return s;
     };
     const parts = [seg('5h', rl.five_hour), seg('7d', rl.seven_day)].filter(Boolean);
-    if (parts.length) lines.push(gray('📊 ') + parts.join(gray('   ')));
+    if (parts.length) lines.push('📊 ' + bold(bwhite('Usage: ')) + parts.join('   '));
   }
 
   return lines.join('\n');

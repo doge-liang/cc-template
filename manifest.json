@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "items": [
+    {
+      "id": "statusline",
+      "type": "file",
+      "repo": "statuslines/context-usage-bar/statusline.js",
+      "target": "~/.claude/statusline.js",
+      "description": "上下文+套餐进度条状态栏"
+    },
+    {
+      "id": "settings",
+      "type": "json-merge",
+      "repo": "configs/settings.template.json",
+      "target": "~/.claude/settings.json",
+      "secrets": [
+        { "path": "env.ZOTERO_API_KEY", "placeholder": "<填你的 Zotero API Key>",
+          "hint": "https://www.zotero.org/settings/keys → New Private Key" },
+        { "path": "env.ZOTERO_USER_ID", "placeholder": "<你的 Zotero numeric userID>",
+          "hint": "同页 'Your userID for use in API calls'" }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "env": {
+    "ZOTERO_LOCAL": "false",
+    "ZOTERO_USER_ID": "<你的 Zotero numeric userID>",
+    "ZOTERO_API_KEY": "<填你的 Zotero API Key>",
+    "PYTHONIOENCODING": "utf-8"
+  },
+  "permissions": {
+    "defaultMode": "auto"
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "node \"~/.claude/statusline.js\"",
+    "padding": 0
+  }
+}
