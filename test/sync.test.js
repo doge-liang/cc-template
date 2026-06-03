@@ -240,3 +240,14 @@ test('CLI 未知命令: 非零退出 + 用法', () => {
   assert.notStrictEqual(r.status, 0);
   assert.match(r.stdout + r.stderr, /用法|usage/i);
 });
+
+test('renderJsonDiff: capture 方向 local-only 标签不同', () => {
+  const rows = [{ path: 'x', kind: 'local-only', from: 1 }];
+  assert.match(renderJsonDiff(rows, 'capture'), /回灌后移除/);
+  assert.match(renderJsonDiff(rows), /本地独有/);
+});
+
+test('CLI capture statusline --dry-run: file 类不报假阳、可运行', () => {
+  const r = runCli(['capture', 'statusline', '--dry-run']);
+  assert.strictEqual(r.status, 0);
+});

@@ -7,7 +7,7 @@ const { loadManifest } = require('./lib/manifest');
 const { expandPath } = require('./lib/paths');
 const { readIfExists, atomicWrite, copyDir } = require('./lib/fsutil');
 const { mergeForApply, diffJson } = require('./lib/jsonmerge');
-const { redactForCapture, safetyScan } = require('./lib/secrets');
+const { redactForCapture, safetyScan, scanText } = require('./lib/secrets');
 const { itemStatus, fileDiff, renderJsonDiff } = require('./lib/diff');
 
 const REPO = __dirname;
@@ -126,7 +126,7 @@ async function cmdCapture(items, flags) {
       }
       const repoObj = readJson(rp);
       const rows = diffJson(repoObj, redacted, []);
-      console.log(renderJsonDiff(rows));
+      console.log(renderJsonDiff(rows, 'capture'));
       if (flags.dryRun) continue;
       if (rows.length && !(await confirm(flags, '写回 repo 模板 ' + it.repo + '?'))) { console.log('跳过'); continue; }
       atomicWrite(rp, JSON.stringify(redacted, null, 2) + '\n');
@@ -134,6 +134,16 @@ async function cmdCapture(items, flags) {
     } else {
       console.log(fileDiff(rp, tp) || '(无差异)');
       if (flags.dryRun) continue;
+      if (it.type === 'file') {
+        const leaks = scanText(fs.readFileSync(tp, 'utf8'), []);
+        if (leaks.length && !flags.force) {
+          console.error('⛔ 文件中检测到疑似密钥，已中止 capture：');
+          for (const l of leaks) console.error('   ' + l.path);
+          console.error('确知安全后加 ' + FORCE_FLAG);
+          process.exitCode = 3;
+          continue;
+        }
+      }
       if (!(await confirm(flags, '用本地覆盖 repo ' + it.repo + '?'))) { console.log('跳过'); continue; }
       if (it.type === 'dir') copyDir(tp, rp);
       else atomicWrite(rp, fs.readFileSync(tp));
