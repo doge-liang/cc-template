@@ -164,9 +164,9 @@ function render(d) {
   // 统一 emoji 图标族(🤖 📁 🌿 🧠 💰 📊 ⏳)；emoji 放在颜色包裹之外，文字才上亮色。
   // ----- 第 1 行：模型 · 目录 · git -----
   const sep = track('  ·  ');
-  let line1 = '🤖 ' + bold(bcyan(model)) + sep + '📁 ' + bblue(dirName);
+  let line1 = '🤖 ' + bold(bcyan(model)) + sep + '📁 ' + bold(bblue(dirName));
   if (git) {
-    let g = '🌿 ' + bmagenta(git.branch);
+    let g = '🌿 ' + bold(bmagenta(git.branch));
     const marks = [];
     if (git.staged) marks.push(bgreen('+' + git.staged));         // 已暂存：亮绿
     if (git.modified) marks.push(A('93', '~' + git.modified));    // 已修改：亮黄
