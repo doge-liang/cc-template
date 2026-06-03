@@ -8,6 +8,7 @@ const fs = require('fs');
 const { readIfExists, atomicWrite, copyDir } = require('../lib/fsutil');
 const { mergeForApply, diffJson, getByPath, setByPath, hasPath } = require('../lib/jsonmerge');
 const { redactForCapture, safetyScan, scanText } = require('../lib/secrets');
+const { validate } = require('../lib/manifest');
 
 function tmpdir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'cct-'));
@@ -163,4 +164,26 @@ test('scanText: JSON 形式 "KEY": "VALUE" 也命中', () => {
 test('safetyScan: 密钥名但值为 null/数字 不误报', () => {
   const found = safetyScan({ env: { SOME_TOKEN: null, COUNT: 12345 } }, []);
   assert.strictEqual(found.length, 0);
+});
+
+test('validate: 合法 manifest 通过', () => {
+  const m = { version: 1, items: [
+    { id: 'a', type: 'file', repo: 'r', target: 't' },
+    { id: 'b', type: 'json-merge', repo: 'r2', target: 't2',
+      secrets: [{ path: 'env.K', placeholder: '<p>' }] },
+  ]};
+  assert.strictEqual(validate(m), true);
+});
+test('validate: 缺 items 报错', () => {
+  assert.throws(() => validate({}), /items/);
+});
+test('validate: id 重复报错', () => {
+  const m = { items: [
+    { id: 'x', type: 'file', repo: 'r', target: 't' },
+    { id: 'x', type: 'file', repo: 'r', target: 't' },
+  ]};
+  assert.throws(() => validate(m), /重复/);
+});
+test('validate: 非法 type 报错', () => {
+  assert.throws(() => validate({ items: [{ id: 'x', type: 'bad', repo: 'r', target: 't' }] }), /type/);
 });
