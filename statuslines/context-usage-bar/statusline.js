@@ -32,8 +32,10 @@ process.stdin.on('end', () => {
 const A = (code, s) => `\x1b[${code}m${s}\x1b[0m`;
 const bold = (s) => A('1', s);
 const bcyan = (s) => A('96', s);      // 模型
-const bblue = (s) => A('94', s);      // 目录
-const bmagenta = (s) => A('95', s);   // git 分支
+const bblue = (s) => A('94', s);      // 亮蓝(备用)
+const bmagenta = (s) => A('95', s);   // 亮品红(备用)
+const lblue = (s) => A('38;5;117', s);    // 目录：256 色浅亮蓝(比 94 更亮)
+const lmagenta = (s) => A('38;5;213', s); // git 分支：256 色浅亮品红(比 95 更亮)
 const bgreen = (s) => A('92', s);     // 花费 / staged / 干净
 const bwhite = (s) => A('97', s);     // 主文字：标签、token 数
 const muted = (s) => A('37', s);      // 次级文字：?未跟踪、↺重置倒计时
@@ -164,9 +166,9 @@ function render(d) {
   // 统一 emoji 图标族(🤖 📁 🌿 🧠 💰 📊 ⏳)；emoji 放在颜色包裹之外，文字才上亮色。
   // ----- 第 1 行：模型 · 目录 · git -----
   const sep = track('  ·  ');
-  let line1 = '🤖 ' + bold(bcyan(model)) + sep + '📁 ' + bold(bblue(dirName));
+  let line1 = '🤖 ' + bold(bcyan(model)) + sep + '📁 ' + lblue(dirName);
   if (git) {
-    let g = '🌿 ' + bold(bmagenta(git.branch));
+    let g = '🌿 ' + lmagenta(git.branch);
     const marks = [];
     if (git.staged) marks.push(bgreen('+' + git.staged));         // 已暂存：亮绿
     if (git.modified) marks.push(A('93', '~' + git.modified));    // 已修改：亮黄
