@@ -214,3 +214,29 @@ test('renderJsonDiff: 含各类标记', () => {
   assert.match(s, /env\.K/);
   assert.match(s, /密钥/);
 });
+
+const cp = require('child_process');
+const REPO_ROOT = path.join(__dirname, '..');
+
+function runCli(args, opts) {
+  return cp.spawnSync('node', [path.join(REPO_ROOT, 'sync.js'), ...args],
+    { encoding: 'utf8', ...opts });
+}
+
+test('CLI list: 列出 manifest 项', () => {
+  const r = runCli(['list']);
+  assert.strictEqual(r.status, 0);
+  assert.match(r.stdout, /statusline/);
+  assert.match(r.stdout, /settings/);
+});
+
+test('CLI diff statusline: 可运行', () => {
+  const r = runCli(['diff', 'statusline']);
+  assert.strictEqual(r.status, 0);
+});
+
+test('CLI 未知命令: 非零退出 + 用法', () => {
+  const r = runCli(['frobnicate']);
+  assert.notStrictEqual(r.status, 0);
+  assert.match(r.stdout + r.stderr, /用法|usage/i);
+});
