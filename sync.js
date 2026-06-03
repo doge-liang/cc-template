@@ -6,7 +6,7 @@ const readline = require('readline');
 const { loadManifest } = require('./lib/manifest');
 const { expandPath } = require('./lib/paths');
 const { readIfExists, atomicWrite, copyDir } = require('./lib/fsutil');
-const { mergeForApply, diffJson } = require('./lib/jsonmerge');
+const { mergeForApply, diffJson, buildCaptureTemplate } = require('./lib/jsonmerge');
 const { redactForCapture, safetyScan, scanText } = require('./lib/secrets');
 const { itemStatus, fileDiff, renderJsonDiff } = require('./lib/diff');
 
@@ -70,7 +70,7 @@ function cmdDiff(items) {
     if (it.type === 'json-merge') {
       const tpl = readJson(repoPath(it));
       const local = readJson(targetPath(it));
-      const { merged } = mergeForApply(tpl, local, it.secrets);
+      const { merged } = mergeForApply(tpl, local, it.secrets, { keys: it.keys, pathFields: it.pathFields });
       console.log(renderJsonDiff(diffJson(local, merged, secretPaths(it))));
     } else {
       console.log(fileDiff(targetPath(it), repoPath(it)) || '(无差异)');
@@ -86,7 +86,7 @@ async function cmdApply(items, flags) {
     if (it.type === 'json-merge') {
       const tpl = readJson(rp);
       const local = readJson(tp);
-      const { merged, reminders } = mergeForApply(tpl, local, it.secrets);
+      const { merged, reminders } = mergeForApply(tpl, local, it.secrets, { keys: it.keys, pathFields: it.pathFields });
       const rows = diffJson(local, merged, secretPaths(it));
       console.log(renderJsonDiff(rows));
       if (flags.dryRun) continue;
@@ -114,7 +114,10 @@ async function cmdCapture(items, flags) {
     if (!fs.existsSync(tp)) { console.error('本地缺少 ' + tp + '，跳过'); continue; }
     if (it.type === 'json-merge') {
       const local = readJson(tp);
-      const redacted = redactForCapture(local, it.secrets);
+      const repoObj = readJson(rp);
+      const redacted = it.keys
+        ? buildCaptureTemplate(repoObj, local, it.secrets, { keys: it.keys, pathFields: it.pathFields })
+        : redactForCapture(local, it.secrets);
       const known = (it.secrets || []).map((s) => s.placeholder);
       const leaks = safetyScan(redacted, known);
       if (leaks.length && !flags.force) {
@@ -124,7 +127,6 @@ async function cmdCapture(items, flags) {
         process.exitCode = 3;
         continue;
       }
-      const repoObj = readJson(rp);
       const rows = diffJson(repoObj, redacted, []);
       console.log(renderJsonDiff(rows, 'capture'));
       if (flags.dryRun) continue;

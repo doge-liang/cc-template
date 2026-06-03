@@ -6,11 +6,39 @@
     "PYTHONIOENCODING": "utf-8"
   },
   "permissions": {
-    "defaultMode": "auto"
+    "defaultMode": "auto",
+    "allow": [
+      "Bash(npx --yes @next-ai-drawio/mcp-server*)",
+      "Bash(gh search *)",
+      "Bash(reg query *)",
+      "mcp__playwright__browser_navigate",
+      "mcp__playwright__browser_wait_for",
+      "mcp__playwright__browser_network_requests",
+      "mcp__playwright__browser_snapshot",
+      "mcp__playwright__browser_close"
+    ]
   },
   "statusLine": {
     "type": "command",
     "command": "node \"~/.claude/statusline.js\"",
     "padding": 0
-  }
+  },
+  "enabledMcpjsonServers": [
+    "drawio"
+  ],
+  "enabledPlugins": {
+    "frontend-design@claude-plugins-official": true,
+    "superpowers@claude-plugins-official": true,
+    "code-simplifier@claude-plugins-official": true,
+    "github@claude-plugins-official": true,
+    "feature-dev@claude-plugins-official": true,
+    "skill-creator@claude-plugins-official": true,
+    "claude-md-management@claude-plugins-official": true,
+    "typescript-lsp@claude-plugins-official": true,
+    "security-guidance@claude-plugins-official": true,
+    "commit-commands@claude-plugins-official": true,
+    "pyright-lsp@claude-plugins-official": true
+  },
+  "verbose": true,
+  "agentPushNotifEnabled": true
 }

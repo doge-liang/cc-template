@@ -14,3 +14,6 @@ settings.local.json
 .credentials.json
 *.key
 .env
+
+# 原子写入备份
+*.bak

@@ -313,3 +313,13 @@ test('buildCaptureTemplate: 只写白名单键，密钥→占位，pathField→c
   assert.strictEqual(out.existingRepoOnly, 'KEEP');           // 名单外 repo 键保留
   assert.ok(!('personal' in out));                            // 名单外 local 键不泄露
 });
+
+test('CLI diff settings: 白名单外的键(skipDangerous)不出现', () => {
+  const r = runCli(['diff', 'settings']);
+  assert.strictEqual(r.status, 0);
+  assert.ok(!/skipDangerousModePermissionPrompt/.test(r.stdout));
+});
+test('CLI capture settings --dry-run: 无泄露、可运行', () => {
+  const r = runCli(['capture', 'settings', '--dry-run']);
+  assert.strictEqual(r.status, 0);
+});
