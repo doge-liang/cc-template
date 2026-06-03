@@ -147,3 +147,9 @@ test('scanText: 裸文件中的密钥赋值', () => {
   const found = scanText(txt, []);
   assert.strictEqual(found.length, 1);
 });
+
+test('safetyScan: 数组里的裸高熵串也命中', () => {
+  const found = safetyScan({ creds: ['Ab3kZ9qP2wL7nR4tX1mD8vC0'] }, []);
+  assert.strictEqual(found.length, 1);
+  assert.strictEqual(found[0].path, 'creds[0]');
+});
