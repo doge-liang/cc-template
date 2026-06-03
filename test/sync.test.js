@@ -3,7 +3,7 @@ const { test } = require('node:test');
 const assert = require('node:assert');
 const os = require('os');
 const path = require('path');
-const { expandPath } = require('../lib/paths');
+const { expandPath, expandTildeInValue, contractHomeInValue } = require('../lib/paths');
 const fs = require('fs');
 const { readIfExists, atomicWrite, copyDir } = require('../lib/fsutil');
 const { mergeForApply, diffJson, getByPath, setByPath, hasPath } = require('../lib/jsonmerge');
@@ -250,4 +250,66 @@ test('renderJsonDiff: capture 方向 local-only 标签不同', () => {
 test('CLI capture statusline --dry-run: file 类不报假阳、可运行', () => {
   const r = runCli(['capture', 'statusline', '--dry-run']);
   assert.strictEqual(r.status, 0);
+});
+
+// Part 1: paths.js helpers
+test('expandTildeInValue: 命令中的 ~ 展开为 home，保留斜杠', () => {
+  const os = require('os');
+  const out = expandTildeInValue('node "~/.claude/statusline.js"');
+  assert.ok(out.includes(os.homedir()));
+  assert.ok(!out.includes('~'));
+});
+test('contractHomeInValue: home 收缩回 ~ 且反斜杠归一为 /', () => {
+  const os = require('os'), path = require('path');
+  const cmd = 'node "' + path.join(os.homedir(), '.claude', 'statusline.js') + '"';
+  const out = contractHomeInValue(cmd);
+  assert.strictEqual(out, 'node "~/.claude/statusline.js"');
+});
+test('expandTilde/contractHome round-trip 跨平台 canonical', () => {
+  const canonical = 'node "~/.claude/statusline.js"';
+  assert.strictEqual(contractHomeInValue(expandTildeInValue(canonical)), canonical);
+});
+
+// Part 2: jsonmerge.js whitelist + buildCaptureTemplate
+const { buildCaptureTemplate } = require('../lib/jsonmerge');
+
+test('mergeForApply: 白名单只覆盖名单内键，名单外本地键不动', () => {
+  const template = { a: 1, b: 2, keepLocalOnly: 'TPL' };
+  const local = { a: 0, b: 0, keepLocalOnly: 'LOCAL', untouched: 'X' };
+  const { merged } = mergeForApply(template, local, [], { keys: ['a', 'b'] });
+  assert.strictEqual(merged.a, 1);
+  assert.strictEqual(merged.b, 2);
+  assert.strictEqual(merged.keepLocalOnly, 'LOCAL'); // 不在白名单 → 不覆盖
+  assert.strictEqual(merged.untouched, 'X');
+});
+test('mergeForApply: pathField 在 apply 时展开 ~', () => {
+  const os = require('os');
+  const template = { statusLine: { command: 'node "~/.claude/statusline.js"' } };
+  const { merged } = mergeForApply(template, {}, [], { keys: ['statusLine.command'], pathFields: ['statusLine.command'] });
+  assert.ok(getByPath(merged, 'statusLine.command').includes(os.homedir()));
+  assert.ok(!getByPath(merged, 'statusLine.command').includes('~'));
+});
+test('mergeForApply: 白名单外的密钥不处理', () => {
+  const template = { env: { K: '<p>' } };
+  const local = {};
+  const secrets = [{ path: 'env.K', placeholder: '<p>' }];
+  const { merged, reminders } = mergeForApply(template, local, secrets, { keys: ['somethingElse'] });
+  assert.strictEqual(reminders.length, 0); // env.K 不在白名单 → 不提醒
+  assert.ok(!('env' in merged) || merged.env.K === undefined);
+});
+test('buildCaptureTemplate: 只写白名单键，密钥→占位，pathField→canonical', () => {
+  const os = require('os'), path = require('path');
+  const repoTemplate = { existingRepoOnly: 'KEEP' };
+  const local = {
+    env: { K: 'REALSECRET' },
+    statusLine: { command: 'node "' + path.join(os.homedir(), '.claude', 'statusline.js') + '"' },
+    personal: 'SHOULD_NOT_LEAK',
+  };
+  const secrets = [{ path: 'env.K', placeholder: '<p>' }];
+  const out = buildCaptureTemplate(repoTemplate, local, secrets,
+    { keys: ['env.K', 'statusLine.command'], pathFields: ['statusLine.command'] });
+  assert.strictEqual(out.env.K, '<p>');                       // 密钥脱敏
+  assert.strictEqual(out.statusLine.command, 'node "~/.claude/statusline.js"'); // canonical
+  assert.strictEqual(out.existingRepoOnly, 'KEEP');           // 名单外 repo 键保留
+  assert.ok(!('personal' in out));                            // 名单外 local 键不泄露
 });
