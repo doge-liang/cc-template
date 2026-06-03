@@ -9,6 +9,7 @@ const { readIfExists, atomicWrite, copyDir } = require('../lib/fsutil');
 const { mergeForApply, diffJson, getByPath, setByPath, hasPath } = require('../lib/jsonmerge');
 const { redactForCapture, safetyScan, scanText } = require('../lib/secrets');
 const { validate } = require('../lib/manifest');
+const { itemStatus, renderJsonDiff } = require('../lib/diff');
 
 function tmpdir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'cct-'));
@@ -186,4 +187,30 @@ test('validate: id 重复报错', () => {
 });
 test('validate: 非法 type 报错', () => {
   assert.throws(() => validate({ items: [{ id: 'x', type: 'bad', repo: 'r', target: 't' }] }), /type/);
+});
+
+test('itemStatus: repo-missing / local-missing / in-sync / differs', () => {
+  const d = tmpdir();
+  const repo = path.join(d, 'repo.txt');
+  const local = path.join(d, 'local.txt');
+  assert.strictEqual(itemStatus(repo, local), 'repo-missing');
+  fs.writeFileSync(repo, 'same');
+  assert.strictEqual(itemStatus(repo, local), 'local-missing');
+  fs.writeFileSync(local, 'same');
+  assert.strictEqual(itemStatus(repo, local), 'in-sync');
+  fs.writeFileSync(local, 'different');
+  assert.strictEqual(itemStatus(repo, local), 'differs');
+});
+
+test('renderJsonDiff: 含各类标记', () => {
+  const rows = [
+    { path: 'added', kind: 'added', to: 2 },
+    { path: 'change', kind: 'changed', from: 'a', to: 'b' },
+    { path: 'env.K', kind: 'secret' },
+  ];
+  const s = renderJsonDiff(rows);
+  assert.match(s, /\+ added/);
+  assert.match(s, /~ change/);
+  assert.match(s, /env\.K/);
+  assert.match(s, /密钥/);
 });
