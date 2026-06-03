@@ -6,6 +6,7 @@ const path = require('path');
 const { expandPath } = require('../lib/paths');
 const fs = require('fs');
 const { readIfExists, atomicWrite, copyDir } = require('../lib/fsutil');
+const { mergeForApply, diffJson, getByPath } = require('../lib/jsonmerge');
 
 function tmpdir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'cct-'));
@@ -52,4 +53,43 @@ test('copyDir: 递归拷贝', () => {
   const dest = path.join(d, 'dest');
   copyDir(src, dest);
   assert.strictEqual(fs.readFileSync(path.join(dest, 'sub', 'x.txt'), 'utf8'), 'X');
+});
+
+test('mergeForApply: 采纳 repo 新增键、保留本地独有键', () => {
+  const template = { a: 1, shared: 'repo' };
+  const local = { shared: 'local', localOnly: true };
+  const { merged } = mergeForApply(template, local, []);
+  assert.strictEqual(merged.a, 1);
+  assert.strictEqual(merged.shared, 'repo');
+  assert.strictEqual(merged.localOnly, true);
+});
+
+test('mergeForApply: 密钥路径保留本地真值', () => {
+  const template = { env: { ZOTERO_API_KEY: '<占位>' }, x: 1 };
+  const local = { env: { ZOTERO_API_KEY: 'REAL-KEY-123' } };
+  const secrets = [{ path: 'env.ZOTERO_API_KEY', placeholder: '<占位>' }];
+  const { merged, reminders } = mergeForApply(template, local, secrets);
+  assert.strictEqual(getByPath(merged, 'env.ZOTERO_API_KEY'), 'REAL-KEY-123');
+  assert.strictEqual(reminders.length, 0);
+});
+
+test('mergeForApply: 本地缺密钥时写占位并提醒', () => {
+  const template = { env: { ZOTERO_API_KEY: '<占位>' } };
+  const local = {};
+  const secrets = [{ path: 'env.ZOTERO_API_KEY', placeholder: '<占位>', hint: 'go-here' }];
+  const { merged, reminders } = mergeForApply(template, local, secrets);
+  assert.strictEqual(getByPath(merged, 'env.ZOTERO_API_KEY'), '<占位>');
+  assert.strictEqual(reminders.length, 1);
+  assert.strictEqual(reminders[0].hint, 'go-here');
+});
+
+test('diffJson: 分类 added/changed/local-only/secret', () => {
+  const local = { keep: 1, change: 'a', env: { K: 'real' } };
+  const merged = { keep: 1, change: 'b', added: 2, env: { K: 'real' } };
+  const rows = diffJson(local, merged, ['env.K']);
+  const byPath = Object.fromEntries(rows.map(r => [r.path, r.kind]));
+  assert.strictEqual(byPath['change'], 'changed');
+  assert.strictEqual(byPath['added'], 'added');
+  assert.strictEqual(byPath['env.K'], 'secret');
+  assert.ok(!('keep' in byPath));
 });
