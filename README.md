@@ -80,6 +80,8 @@ node sync.js capture [id...]     # 本地 → repo（自动把真密钥剥离成
 
 配色为黑底高对比：内容文字用亮色，进度条按占用变色 🟢 `<50%` ／ 🟡 `<80%` ／ 🔴 `≥80%`。图标统一为 emoji，不依赖特殊字体。
 
+**自适应宽度**：按 Claude Code 注入的 `COLUMNS` 自动折叠——窄终端时长路径中部省略、放不下的段下移成独立行；够宽时与历史输出一致，读不到 `COLUMNS` 则退回不折叠。配合 `statusLine.refreshInterval`（模板默认 60s）让倒计时 `⏳` 心跳刷新。
+
 👉 字段来源与详细安装见 [组件 README](./statuslines/context-usage-bar/README.md)。
 
 ---
@@ -130,8 +132,8 @@ node sync.js apply          # 把 statusline + settings 应用到 ~/.claude（�
 - [x] git dirty 状态标记（`*` / staged / modified 计数）
 - [x] 黑底高对比配色 + 统一 emoji 图标 + 完整路径
 - [x] 多设备配置同步 CLI（apply / capture / diff，模板占位 + 白名单 + 安全扫描）
+- [x] 窄终端自适应折叠（按 `COLUMNS` 压缩路径 + 段下移）+ `refreshInterval` 心跳刷新
 - [ ] 把更多项纳入 manifest（skills / hooks / keybindings）
-- [ ] 单行紧凑版状态栏（适合窄终端）
 
 ---
 

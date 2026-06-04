@@ -6,17 +6,32 @@ Claude Code 状态栏小组件：在底部显示**上下文窗口占用**和**�
 
 ## 效果
 
+**宽终端**（紧凑三行）：
+
 ```
-◆ Opus 4.8 · 📁 myproj · ⎇ main* +1 ~2 ?1 ↑1
-🧠 Ctx [████░░░░░░] 42% 84k/200k   💰 $0.34
-📊 5h [██░░░░░░] 28% ↺2h13m   7d [███████░] 83% ↺3d11h
+🤖 Opus 4.8  ·  📁 /home/you/proj  ·  🌿 main ✓
+🧠 Context: [████░░░░░░] 42% 84k/200k  ·  💰 $0.34
+📊 Usage: 5h [██░░░░] 28% ⏳ 2h13m   7d [███████░] 83% ⏳ 3d11h
+```
+
+**窄终端**（按 `COLUMNS` 自动折叠：长路径中部省略，放不下的段下移成独立行）：
+
+```
+🤖 Opus 4.8  ·  📁 …/proj
+🌿 main ✓
+🧠 Context: [████░░░░░░] 42% 84k/200k
+💰 $0.34
+📊 Usage: 5h [██░░░░] 28% ⏳ 2h13m
+7d [███████░] 83% ⏳ 3d11h
 ```
 
 | 行 | 内容 |
 |----|------|
 | 1 | 模型名 · 当前目录 · git 分支 + dirty 状态（在 git 仓库中才显示；detached HEAD 显示短 hash） |
 | 2 | 上下文占用进度条 · `已用 token / 窗口大小` · 本次会话花费（`$`） |
-| 3 | 套餐用量进度条：5 小时窗口、7 天窗口的用量百分比与距重置倒计时（`↺`） |
+| 3 | 套餐用量进度条：5 小时窗口、7 天窗口的用量百分比与距重置倒计时（`⏳`） |
+
+> **自适应宽度**：脚本读取 Claude Code 注入的 `COLUMNS` 环境变量（v2.1.153+）。终端够宽时与历史输出逐字节一致；变窄时自动折叠——读不到 `COLUMNS` 则退回「不折叠」，绝不报错。
 
 进度条配色随占用变化：🟢 `<50%` ／ 🟡 `<80%` ／ 🔴 `≥80%`。
 
@@ -60,7 +75,7 @@ Claude Code 每次刷新状态栏时，把当前会话 JSON 经 **stdin** 传给
    - Windows：`C:\Users\<你>\.claude\statusline.js`
    - macOS / Linux：`~/.claude/statusline.js`
 
-2. 编辑 `~/.claude/settings.json`，加入 `statusLine`：
+2. 编辑 `~/.claude/settings.json`，加入 `statusLine`（`refreshInterval: 60` 让倒计时每 60 秒心跳刷新；不需要可删）：
 
    **Windows：**
    ```json
@@ -68,7 +83,8 @@ Claude Code 每次刷新状态栏时，把当前会话 JSON 经 **stdin** 传给
      "statusLine": {
        "type": "command",
        "command": "node \"C:\\Users\\<你>\\.claude\\statusline.js\"",
-       "padding": 0
+       "padding": 0,
+       "refreshInterval": 60
      }
    }
    ```
@@ -79,7 +95,8 @@ Claude Code 每次刷新状态栏时，把当前会话 JSON 经 **stdin** 传给
      "statusLine": {
        "type": "command",
        "command": "node ~/.claude/statusline.js",
-       "padding": 0
+       "padding": 0,
+       "refreshInterval": 60
      }
    }
    ```
@@ -94,8 +111,10 @@ Claude Code 每次刷新状态栏时，把当前会话 JSON 经 **stdin** 传给
 |------|--------|
 | 进度条更长 / 更短 | 改 `bar(pct, 10)` 第二个参数（第 3 行的套餐条是 `bar(..., 8)`） |
 | 改变色阈值 | 改 `pctColor()` 里的 `80` / `50` |
-| 删掉某一行 | 在 `render()` 里删除对应的 `line1/line2/lines.push(...)` |
-| 换图标 | 直接替换 `◆ 📁 🧠 📊 ↺ ⎇` 等字符 |
+| 删掉某一组 | 在 `render()` 里删除对应那组的 `packLine(...)` 调用 |
+| 换图标 | 直接替换 `🤖 📁 🌿 🧠 💰 📊 ⏳` 等字符 |
+| 调整心跳频率 | 改 `settings.json` 里 `statusLine.refreshInterval` 的秒数（删掉则仅在发消息时刷新） |
+| 关闭窄屏折叠 | 折叠由 `COLUMNS` 自动触发、无开关；终端够宽即不折叠 |
 
 ## 工作原理
 

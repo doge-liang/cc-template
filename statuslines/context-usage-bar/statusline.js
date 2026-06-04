@@ -10,21 +10,28 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const cp = require('child_process');
 
-let raw = '';
-process.stdin.setEncoding('utf8');
-process.stdin.on('data', (c) => (raw += c));
-process.stdin.on('end', () => {
-  let d = {};
-  try { d = JSON.parse(raw); } catch (_) {}
-  try {
-    process.stdout.write(render(d) + '\n');
-  } catch (e) {
-    // 任何异常都不应让状态栏报错，降级输出
-    process.stdout.write('');
-  }
-});
+// 作为命令直接运行时：从 stdin 读会话 JSON、渲染并打印。
+// 被 require（测试）时不跑此逻辑，只导出纯函数 —— 避免挂住 stdin。
+function main() {
+  let raw = '';
+  process.stdin.setEncoding('utf8');
+  process.stdin.on('data', (c) => (raw += c));
+  process.stdin.on('end', () => {
+    let d = {};
+    try { d = JSON.parse(raw); } catch (_) {}
+    try {
+      process.stdout.write(render(d) + '\n');
+    } catch (e) {
+      // 任何异常都不应让状态栏报错，降级输出
+      process.stdout.write('');
+    }
+  });
+}
+
+if (require.main === module) main();
 
 // ---------- ANSI 颜色辅助 ----------
 // 配色目标：黑色终端高对比。内容文字一律用亮色系(9x/亮白97)，
@@ -40,6 +47,94 @@ const bgreen = (s) => A('92', s);     // 花费 / staged / 干净
 const bwhite = (s) => A('97', s);     // 主文字：标签、token 数
 const muted = (s) => A('37', s);      // 次级文字：?未跟踪、↺重置倒计时
 const track = (s) => A('90', s);      // 分隔点 / 进度条空槽(深灰轨道)
+
+// ---------- 显示宽度（按终端宽度折叠时用） ----------
+// 计算字符串在终端的"可见列宽"：先剥掉 ANSI 颜色转义；emoji 与 CJK 全角字符算 2 列；
+// 变体选择符/零宽连接符/组合附加符号算 0 列；其余算 1 列。
+// 区间表参考东亚宽字符 + emoji 主块，足够覆盖本状态栏用到的字符（🤖📁🌿🧠💰📊⏳ 与中文目录名）。
+const WIDE_RANGES = [
+  [0x1100, 0x115F], [0x2329, 0x232A], [0x2E80, 0x303E],
+  [0x3041, 0x33FF], [0x3400, 0x4DBF], [0x4E00, 0x9FFF],
+  [0xA000, 0xA4CF], [0xAC00, 0xD7A3], [0xF900, 0xFAFF],
+  [0xFE10, 0xFE19], [0xFE30, 0xFE6F], [0xFF00, 0xFF60],
+  [0xFFE0, 0xFFE6], [0x231A, 0x231B], [0x23E9, 0x23F3],
+  [0x1F300, 0x1FAFF], [0x20000, 0x3FFFD],
+];
+function isWideCp(cp) {
+  for (let i = 0; i < WIDE_RANGES.length; i++) {
+    if (cp >= WIDE_RANGES[i][0] && cp <= WIDE_RANGES[i][1]) return true;
+  }
+  return false;
+}
+function vlen(s) {
+  const clean = String(s).replace(/\x1b\[[0-9;]*m/g, '');
+  let w = 0;
+  for (const ch of clean) {
+    const cp = ch.codePointAt(0);
+    if (cp === 0xFE0F || cp === 0x200D || (cp >= 0x0300 && cp <= 0x036F)) continue; // 0 宽
+    w += isWideCp(cp) ? 2 : 1;
+  }
+  return w;
+}
+
+// 从字符串尾部截取，使可见宽 ≤ cols（极窄时保留路径末段的尾部）。
+function truncTail(s, cols) {
+  const chars = Array.from(String(s));
+  let w = 0, i = chars.length;
+  while (i > 0) {
+    const cw = vlen(chars[i - 1]);
+    if (w + cw > cols) break;
+    w += cw; i--;
+  }
+  return chars.slice(i).join('');
+}
+
+// 把路径压缩到 budget 列以内：① home 前缀→~；② 仍超则中部省略保留根标记+末段；
+// ③ 末段仍超则截断末段尾部并前置 …。budget 为 Infinity 或本就够宽时原样返回。
+function shortenPath(p, budget) {
+  p = String(p);
+  if (!isFinite(budget) || vlen(p) <= budget) return p;
+  let s = p;
+  const home = os.homedir();
+  if (home && (s === home || s.startsWith(home + '/') || s.startsWith(home + '\\'))) {
+    s = '~' + s.slice(home.length);
+  }
+  if (vlen(s) <= budget) return s;
+  const parts = s.split(/[\/\\]/).filter(Boolean);
+  const last = parts.length ? parts[parts.length - 1] : s;
+  const prefix = s[0] === '~' ? '~/…/' : (s[0] === '/' || s[0] === '\\') ? '/…/' : '…/';
+  let cand = prefix + last;
+  if (vlen(cand) <= budget) return cand;
+  cand = '…/' + last;
+  if (vlen(cand) <= budget) return cand;
+  return '…' + truncTail(last, Math.max(1, budget - 1));
+}
+
+// 段间分隔符（带深灰轨道色），render 与 packLine 共用。
+const SEP = track('  ·  ');
+
+// 把"自带图标的段"用 sep 贪心装箱到 cols 列内：放不下的段下移成新物理行；
+// 单段本身超宽也独占一行（不在段内部断字）。cols=Infinity 时退化为单行（保持原行为）。
+function packLine(segments, cols, sep) {
+  sep = sep == null ? SEP : sep;
+  const sepW = vlen(sep);
+  const out = [];
+  let cur = segments.length ? segments[0] : '';
+  let curW = vlen(cur);
+  for (let i = 1; i < segments.length; i++) {
+    const segW = vlen(segments[i]);
+    if (curW + sepW + segW <= cols) {
+      cur += sep + segments[i];
+      curW += sepW + segW;
+    } else {
+      out.push(cur);
+      cur = segments[i];
+      curW = segW;
+    }
+  }
+  out.push(cur);
+  return out;
+}
 
 // 根据占用百分比给进度条上色：亮绿 < 50，亮黄 < 80，亮红 >= 80
 function pctColor(pct) {
@@ -147,11 +242,20 @@ function gitInfo(cwd) {
   return branch ? { branch, staged, modified, untracked, ahead, behind } : null;
 }
 
+// 终端可用列宽：Claude Code 会在运行状态栏前注入 COLUMNS 环境变量（v2.1.153+）。
+// 读不到时返回 Infinity —— 即"不折叠"，与历史行为完全一致（向后兼容/降级安全）。
+function termWidth() {
+  const c = parseInt(process.env.COLUMNS, 10);
+  return (Number.isFinite(c) && c > 0) ? c : Infinity;
+}
+
 // ---------- 主渲染 ----------
-function render(d) {
+// cols：终端可用列宽，默认取 termWidth()。把每组内容拆成"自带图标的段"交给 packLine：
+// 宽终端时各组仍并成一行（与旧版逐字节一致）；窄终端时路径先压缩，放不下的段再下移成独立行。
+function render(d, cols) {
+  if (cols == null) cols = termWidth();
   const model = (d.model && d.model.display_name) || 'Claude';
   const cwd = (d.workspace && d.workspace.current_dir) || d.cwd || process.cwd();
-  const dirName = cwd; // 显示完整工作目录路径
   const git = gitInfo(cwd);
 
   const cw = d.context_window || {};
@@ -160,13 +264,14 @@ function render(d) {
     : (cw.context_window_size ? (100 * (cw.total_input_tokens || 0)) / cw.context_window_size : 0);
   const used = cw.total_input_tokens || 0;
   const size = cw.context_window_size || 200000;
-
   const cost = d.cost && d.cost.total_cost_usd;
 
   // 统一 emoji 图标族(🤖 📁 🌿 🧠 💰 📊 ⏳)；emoji 放在颜色包裹之外，文字才上亮色。
-  // ----- 第 1 行：模型 · 目录 · git -----
-  const sep = track('  ·  ');
-  let line1 = '🤖 ' + bold(bcyan(model)) + sep + '📁 ' + lblue(dirName);
+  const lines = [];
+
+  // ----- 第 1 组：模型 · 目录 · git -----
+  const modelSeg = '🤖 ' + bold(bcyan(model));
+  let gitSeg = null;
   if (git) {
     let g = '🌿 ' + lmagenta(git.branch);
     const marks = [];
@@ -179,16 +284,21 @@ function render(d) {
     if (git.ahead) ab += '↑' + git.ahead;
     if (git.behind) ab += '↓' + git.behind;
     if (ab) g += ' ' + bcyan(ab);
-    line1 += sep + g;
+    gitSeg = g;
   }
+  // 路径预算：让 模型·路径·git 尽量挤进一行；下限 8 列防止压得过短。
+  const sepW = vlen(SEP);
+  const fixed = vlen(modelSeg) + sepW + (gitSeg ? sepW + vlen(gitSeg) : 0) + vlen('📁 ');
+  const pathBudget = Math.max(8, cols - fixed);
+  const pathSeg = '📁 ' + lblue(shortenPath(cwd, pathBudget));
+  for (const l of packLine([modelSeg, pathSeg, gitSeg].filter(Boolean), cols)) lines.push(l);
 
-  // ----- 第 2 行：Context 上下文占用 -----
-  let line2 = '🧠 ' + bold(bwhite('Context: ')) + bar(ctxPct) + bwhite(`  ${fmtTokens(used)}/${fmtTokens(size)}`);
-  if (typeof cost === 'number') line2 += sep + '💰 ' + bgreen('$' + cost.toFixed(2));
+  // ----- 第 2 组：Context 上下文占用 · 花费 -----
+  const ctxSeg = '🧠 ' + bold(bwhite('Context: ')) + bar(ctxPct) + bwhite(`  ${fmtTokens(used)}/${fmtTokens(size)}`);
+  const costSeg = (typeof cost === 'number') ? '💰 ' + bgreen('$' + cost.toFixed(2)) : null;
+  for (const l of packLine([ctxSeg, costSeg].filter(Boolean), cols)) lines.push(l);
 
-  const lines = [line1, line2];
-
-  // ----- 第 3 行：套餐 Usage 进度条（仅 Pro/Max 订阅、且首次 API 响应后才有）-----
+  // ----- 第 3 组：套餐 Usage 进度条（仅 Pro/Max 订阅、且首次 API 响应后才有）-----
   const rl = d.rate_limits;
   if (rl && (rl.five_hour || rl.seven_day)) {
     const now = Date.now() / 1000;
@@ -199,8 +309,15 @@ function render(d) {
       return s;
     };
     const parts = [seg('5h', rl.five_hour), seg('7d', rl.seven_day)].filter(Boolean);
-    if (parts.length) lines.push('📊 ' + bold(bwhite('Usage: ')) + parts.join('   '));
+    if (parts.length) {
+      // Usage 段间用 3 空格分隔（保留原视觉）；窄终端则 7d 下移成独立行。
+      const usageSegs = ['📊 ' + bold(bwhite('Usage: ')) + parts[0], ...parts.slice(1)];
+      for (const l of packLine(usageSegs, cols, '   ')) lines.push(l);
+    }
   }
 
   return lines.join('\n');
 }
+
+// 仅当作为命令运行时才执行 main()（见顶部守卫）；此处导出纯函数供测试与复用。
+module.exports = { render, vlen, shortenPath, packLine };

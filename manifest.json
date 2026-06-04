@@ -23,7 +23,7 @@
         "env.ZOTERO_LOCAL", "env.ZOTERO_USER_ID", "env.ZOTERO_API_KEY", "env.PYTHONIOENCODING",
         "permissions.defaultMode", "permissions.allow",
         "enabledMcpjsonServers", "enabledPlugins",
-        "statusLine.type", "statusLine.padding", "statusLine.command",
+        "statusLine.type", "statusLine.padding", "statusLine.command", "statusLine.refreshInterval",
         "verbose", "agentPushNotifEnabled"
       ],
       "pathFields": ["statusLine.command"]
